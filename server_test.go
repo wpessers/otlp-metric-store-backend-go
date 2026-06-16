@@ -191,6 +191,108 @@ func sumRequest(service, metric string, value int64, monotonic bool) *colmetrics
 	}
 }
 
+// zeroTimestampGaugeRequest returns a request whose single gauge point has an
+// invalid (zero) TimeUnixNano, so it should be rejected rather than stored.
+func zeroTimestampGaugeRequest() *colmetricspb.ExportMetricsServiceRequest {
+	return &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*otelmetrics.ResourceMetrics{{
+			ScopeMetrics: []*otelmetrics.ScopeMetrics{{
+				Scope: &commonpb.InstrumentationScope{Name: "test-scope"},
+				Metrics: []*otelmetrics.Metric{{
+					Name: "demo.gauge",
+					Data: &otelmetrics.Metric_Gauge{Gauge: &otelmetrics.Gauge{
+						DataPoints: []*otelmetrics.NumberDataPoint{{
+							TimeUnixNano: 0,
+							Value:        &otelmetrics.NumberDataPoint_AsDouble{AsDouble: 1},
+						}},
+					}},
+				}},
+			}},
+		}},
+	}
+}
+
+// histogramRequest returns a request with a single histogram metric carrying
+// dataPoints data points. Histograms are currently unsupported and should be rejected.
+func histogramRequest(dataPoints int) *colmetricspb.ExportMetricsServiceRequest {
+	dps := make([]*otelmetrics.HistogramDataPoint, dataPoints)
+	for i := range dps {
+		dps[i] = &otelmetrics.HistogramDataPoint{TimeUnixNano: uint64(i + 1)}
+	}
+	return &colmetricspb.ExportMetricsServiceRequest{
+		ResourceMetrics: []*otelmetrics.ResourceMetrics{{
+			ScopeMetrics: []*otelmetrics.ScopeMetrics{{
+				Scope: &commonpb.InstrumentationScope{Name: "test-scope"},
+				Metrics: []*otelmetrics.Metric{{
+					Name: "demo.histogram",
+					Data: &otelmetrics.Metric_Histogram{Histogram: &otelmetrics.Histogram{DataPoints: dps}},
+				}},
+			}},
+		}},
+	}
+}
+
+// TestMetricsServiceServer_Export_PartialSuccess verifies that dropped data is
+// surfaced to the client via PartialSuccess instead of being silently ignored.
+func TestMetricsServiceServer_Export_PartialSuccess(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("full success leaves PartialSuccess nil", func(t *testing.T) {
+		srv := newServer("test", &fakeStore{})
+
+		resp, err := srv.Export(ctx, gaugeRequest("svc", "demo.gauge", 1))
+		if err != nil {
+			t.Fatalf("Export() error = %v", err)
+		}
+		if resp.GetPartialSuccess() != nil {
+			t.Errorf("PartialSuccess = %v, want nil for a fully accepted request", resp.GetPartialSuccess())
+		}
+	})
+
+	t.Run("rejects a zero-timestamp point and reports it", func(t *testing.T) {
+		store := &fakeStore{}
+		srv := newServer("test", store)
+
+		resp, err := srv.Export(ctx, zeroTimestampGaugeRequest())
+		if err != nil {
+			t.Fatalf("Export() error = %v", err)
+		}
+		if len(store.gaugeRows) != 0 {
+			t.Errorf("gauge rows stored = %d, want 0", len(store.gaugeRows))
+		}
+		ps := resp.GetPartialSuccess()
+		if ps == nil {
+			t.Fatal("PartialSuccess = nil, want populated")
+		}
+		if ps.GetRejectedDataPoints() != 1 {
+			t.Errorf("RejectedDataPoints = %d, want 1", ps.GetRejectedDataPoints())
+		}
+		if ps.GetErrorMessage() == "" {
+			t.Error("ErrorMessage is empty, want a description of the rejection")
+		}
+	})
+
+	t.Run("rejects unsupported metric data points", func(t *testing.T) {
+		store := &fakeStore{}
+		srv := newServer("test", store)
+
+		resp, err := srv.Export(ctx, histogramRequest(3))
+		if err != nil {
+			t.Fatalf("Export() error = %v", err)
+		}
+		if store.seriesCalls != 0 || store.gaugeCalls != 0 || store.sumCalls != 0 {
+			t.Errorf("store was called for an unsupported metric: series=%d gauge=%d sum=%d", store.seriesCalls, store.gaugeCalls, store.sumCalls)
+		}
+		ps := resp.GetPartialSuccess()
+		if ps == nil {
+			t.Fatal("PartialSuccess = nil, want populated")
+		}
+		if ps.GetRejectedDataPoints() != 3 {
+			t.Errorf("RejectedDataPoints = %d, want 3", ps.GetRejectedDataPoints())
+		}
+	})
+}
+
 // Test forwarding mapped metric rows to the store
 func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 	ctx := context.Background()

@@ -237,6 +237,95 @@ func TestMapMetrics_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestMapMetrics_RejectsZeroTimestamp(t *testing.T) {
+	attr := func(k, v string) []*commonpb.KeyValue {
+		return []*commonpb.KeyValue{{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v}}}}
+	}
+	// One gauge data point with a valid timestamp and one with a zero timestamp,
+	// plus one sum data point with a zero timestamp.
+	rm := []*metricspb.ResourceMetrics{{
+		Resource: &resourcepb.Resource{Attributes: attr("service.name", "checkout")},
+		ScopeMetrics: []*metricspb.ScopeMetrics{{
+			Scope: &commonpb.InstrumentationScope{Name: "scope"},
+			Metrics: []*metricspb.Metric{
+				{
+					Name: "memory.usage",
+					Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{
+						DataPoints: []*metricspb.NumberDataPoint{
+							{TimeUnixNano: 2_000_000_000, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 1}},
+							{TimeUnixNano: 0, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 2}},
+						},
+					}},
+				},
+				{
+					Name: "http.requests",
+					Data: &metricspb.Metric_Sum{Sum: &metricspb.Sum{
+						DataPoints: []*metricspb.NumberDataPoint{
+							{TimeUnixNano: 0, Value: &metricspb.NumberDataPoint_AsInt{AsInt: 5}},
+						},
+					}},
+				},
+			},
+		}},
+	}}
+
+	m, err := MapMetrics(rm)
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
+
+	if len(m.Gauges) != 1 {
+		t.Errorf("gauge rows = %d, want 1 (only the valid point is stored)", len(m.Gauges))
+	}
+	if len(m.Sums) != 0 {
+		t.Errorf("sum rows = %d, want 0 (its only point is rejected)", len(m.Sums))
+	}
+	if m.RejectedDataPoints != 2 {
+		t.Errorf("RejectedDataPoints = %d, want 2", m.RejectedDataPoints)
+	}
+	if m.UnsupportedMetrics != 0 {
+		t.Errorf("UnsupportedMetrics = %d, want 0", m.UnsupportedMetrics)
+	}
+	// The sum's only point was rejected, so no orphan series row should exist for it.
+	if len(m.Series) != 1 {
+		t.Errorf("series rows = %d, want 1 (no series for a fully rejected metric)", len(m.Series))
+	}
+}
+
+func TestMapMetrics_RejectsUnsupportedTypes(t *testing.T) {
+	histogramDP := []*metricspb.HistogramDataPoint{{TimeUnixNano: 1}, {TimeUnixNano: 2}}
+	expHistogramDP := []*metricspb.ExponentialHistogramDataPoint{{TimeUnixNano: 1}}
+	summaryDP := []*metricspb.SummaryDataPoint{{TimeUnixNano: 1}, {TimeUnixNano: 2}, {TimeUnixNano: 3}}
+
+	rm := []*metricspb.ResourceMetrics{{
+		Resource: &resourcepb.Resource{},
+		ScopeMetrics: []*metricspb.ScopeMetrics{{
+			Scope: &commonpb.InstrumentationScope{Name: "scope"},
+			Metrics: []*metricspb.Metric{
+				{Name: "latency.histogram", Data: &metricspb.Metric_Histogram{Histogram: &metricspb.Histogram{DataPoints: histogramDP}}},
+				{Name: "latency.exphistogram", Data: &metricspb.Metric_ExponentialHistogram{ExponentialHistogram: &metricspb.ExponentialHistogram{DataPoints: expHistogramDP}}},
+				{Name: "latency.summary", Data: &metricspb.Metric_Summary{Summary: &metricspb.Summary{DataPoints: summaryDP}}},
+			},
+		}},
+	}}
+
+	m, err := MapMetrics(rm)
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
+
+	if len(m.Series) != 0 || len(m.Gauges) != 0 || len(m.Sums) != 0 {
+		t.Errorf("unsupported metrics produced rows: series=%d gauges=%d sums=%d, want 0 each", len(m.Series), len(m.Gauges), len(m.Sums))
+	}
+	if m.UnsupportedMetrics != 3 {
+		t.Errorf("UnsupportedMetrics = %d, want 3", m.UnsupportedMetrics)
+	}
+	// 2 histogram + 1 exponential histogram + 3 summary data points.
+	if m.RejectedDataPoints != 6 {
+		t.Errorf("RejectedDataPoints = %d, want 6", m.RejectedDataPoints)
+	}
+}
+
 func TestMapMetrics_DeduplicatesSeries(t *testing.T) {
 	attr := func(k, v string) []*commonpb.KeyValue {
 		return []*commonpb.KeyValue{{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v}}}}

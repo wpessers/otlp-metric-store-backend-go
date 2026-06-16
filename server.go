@@ -24,13 +24,15 @@ import (
 const name = "otlp-metrics-store-backend"
 
 var (
-	meter                 = otel.Meter(name)
-	logger                = otelslog.NewLogger(name)
-	exportRequestsCounter metric.Int64Counter
-	exportFailuresCounter metric.Int64Counter
-	seriesRowsCounter     metric.Int64Counter
-	gaugePointsCounter    metric.Int64Counter
-	sumPointsCounter      metric.Int64Counter
+	meter                     = otel.Meter(name)
+	logger                    = otelslog.NewLogger(name)
+	exportRequestsCounter     metric.Int64Counter
+	exportFailuresCounter     metric.Int64Counter
+	seriesRowsCounter         metric.Int64Counter
+	gaugePointsCounter        metric.Int64Counter
+	sumPointsCounter          metric.Int64Counter
+	rejectedDataPointsCounter metric.Int64Counter
+	unsupportedMetricsCounter metric.Int64Counter
 )
 
 func init() {
@@ -62,6 +64,18 @@ func init() {
 	sumPointsCounter, err = meter.Int64Counter("otlp_metric_store_sum_points_total",
 		metric.WithDescription("Number of sum datapoints mapped"),
 		metric.WithUnit("{point}"))
+	if err != nil {
+		panic(err)
+	}
+	rejectedDataPointsCounter, err = meter.Int64Counter("otlp_metric_store_rejected_data_points_total",
+		metric.WithDescription("Number of metric data points rejected during mapping (zero timestamp or unsupported metric type)"),
+		metric.WithUnit("{point}"))
+	if err != nil {
+		panic(err)
+	}
+	unsupportedMetricsCounter, err = meter.Int64Counter("otlp_metric_store_unsupported_metrics_total",
+		metric.WithDescription("Number of metrics dropped because their type is not supported (histogram, exponential histogram, summary)"),
+		metric.WithUnit("{metric}"))
 	if err != nil {
 		panic(err)
 	}

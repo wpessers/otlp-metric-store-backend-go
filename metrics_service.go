@@ -37,6 +37,12 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 	seriesRowsCounter.Add(ctx, int64(len(mapped.Series)))
 	gaugePointsCounter.Add(ctx, int64(len(mapped.Gauges)))
 	sumPointsCounter.Add(ctx, int64(len(mapped.Sums)))
+	if mapped.RejectedDataPoints > 0 {
+		rejectedDataPointsCounter.Add(ctx, mapped.RejectedDataPoints)
+	}
+	if mapped.UnsupportedMetrics > 0 {
+		unsupportedMetricsCounter.Add(ctx, mapped.UnsupportedMetrics)
+	}
 
 	if len(mapped.Series) > 0 {
 		if err := m.store.InsertSeries(ctx, mapped.Series); err != nil {
@@ -61,7 +67,26 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 	}
 
 	slog.DebugContext(ctx, "processed metric export request", metricExportLogAttributes(mapped)...)
-	return &colmetricspb.ExportMetricsServiceResponse{}, nil
+
+	resp := &colmetricspb.ExportMetricsServiceResponse{}
+	if mapped.RejectedDataPoints > 0 {
+		slog.WarnContext(ctx, "rejected metric data during export", metricExportLogAttributes(mapped)...)
+		resp.PartialSuccess = &colmetricspb.ExportMetricsPartialSuccess{
+			RejectedDataPoints: mapped.RejectedDataPoints,
+			ErrorMessage:       partialSuccessMessage(mapped),
+		}
+	}
+	return resp, nil
+}
+
+// partialSuccessMessage describes why data points were rejected.
+func partialSuccessMessage(mapped MappedMetrics) string {
+	if mapped.UnsupportedMetrics > 0 {
+		return fmt.Sprintf(
+			"rejected %d data point(s); dropped %d unsupported metric(s): histogram, exponential histogram and summary are not stored. Data points with a zero TimeUnixNano are also rejected.",
+			mapped.RejectedDataPoints, mapped.UnsupportedMetrics)
+	}
+	return fmt.Sprintf("rejected %d data point(s) with a zero TimeUnixNano", mapped.RejectedDataPoints)
 }
 
 func logMetricExportFailure(ctx context.Context, message string, mapped MappedMetrics, err error) {
@@ -74,5 +99,7 @@ func metricExportLogAttributes(mapped MappedMetrics) []any {
 		slog.Int("series_rows", len(mapped.Series)),
 		slog.Int("gauge_points", len(mapped.Gauges)),
 		slog.Int("sum_points", len(mapped.Sums)),
+		slog.Int64("rejected_data_points", mapped.RejectedDataPoints),
+		slog.Int64("unsupported_metrics", mapped.UnsupportedMetrics),
 	}
 }

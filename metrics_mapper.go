@@ -77,6 +77,12 @@ type MappedMetrics struct {
 	Series []MetricSeriesRow
 	Gauges []GaugeRow
 	Sums   []SumRow
+
+	// RejectedDataPoints is the total number of data points dropped during mapping
+	RejectedDataPoints int64
+	// UnsupportedMetrics is the number of metrics dropped because their type is unsupported
+	// For now (histogram, exponential histogram, summary), because out of scope
+	UnsupportedMetrics int64
 }
 
 // MapMetrics walks the request and produces the rows to persist: a deduplicated
@@ -98,6 +104,11 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) (MappedMetrics, er
 				switch data := metric.GetData().(type) {
 				case *metricspb.Metric_Gauge:
 					for _, dp := range data.Gauge.GetDataPoints() {
+						if dp.GetTimeUnixNano() == 0 {
+							// The OTLP spec says consumers SHOULD reject points with a zero timestamp
+							mapped.RejectedDataPoints++
+							continue
+						}
 						meta := MetricMetadata{
 							MetricType:            metricTypeGauge,
 							ServiceName:           svcName,
@@ -125,6 +136,11 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) (MappedMetrics, er
 				case *metricspb.Metric_Sum:
 					sum := data.Sum
 					for _, dp := range sum.GetDataPoints() {
+						if dp.GetTimeUnixNano() == 0 {
+							// See the gauge case above, zero-timestamp points are rejected.
+							mapped.RejectedDataPoints++
+							continue
+						}
 						meta := MetricMetadata{
 							MetricType:             metricTypeSum,
 							ServiceName:            svcName,
@@ -151,11 +167,23 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) (MappedMetrics, er
 							NumberDataPoint: numberDataPoint(dp),
 						})
 					}
+				case *metricspb.Metric_Histogram:
+					mapped.rejectUnsupported(len(data.Histogram.GetDataPoints()))
+				case *metricspb.Metric_ExponentialHistogram:
+					mapped.rejectUnsupported(len(data.ExponentialHistogram.GetDataPoints()))
+				case *metricspb.Metric_Summary:
+					mapped.rejectUnsupported(len(data.Summary.GetDataPoints()))
 				}
 			}
 		}
 	}
 	return mapped, nil
+}
+
+// rejectUnsupported records a metric whose type this backend does not store
+func (mm *MappedMetrics) rejectUnsupported(dataPoints int) {
+	mm.UnsupportedMetrics++
+	mm.RejectedDataPoints += int64(dataPoints)
 }
 
 // recordSeries returns meta's SeriesID, appending its lookup row the first time that ID is seen.
