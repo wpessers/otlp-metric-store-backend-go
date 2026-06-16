@@ -255,6 +255,98 @@ func TestInsertSum(t *testing.T) {
 	}
 }
 
+func TestInsertSeries(t *testing.T) {
+	store, cleanup := setupClickHouse(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	if err := store.CreateTables(ctx); err != nil {
+		t.Fatalf("creating tables: %v", err)
+	}
+
+	now := uint64(time.Now().UnixNano())
+	resourceMetrics := []*metricspb.ResourceMetrics{
+		{
+			Resource: &resourcepb.Resource{
+				Attributes: []*commonpb.KeyValue{
+					{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "test-service"}}},
+					{Key: "host.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "test-host"}}},
+				},
+			},
+			SchemaUrl: "https://opentelemetry.io/schemas/1.4.0",
+			ScopeMetrics: []*metricspb.ScopeMetrics{
+				{
+					Scope: &commonpb.InstrumentationScope{
+						Name:    "test-scope",
+						Version: "1.0.0",
+					},
+					Metrics: []*metricspb.Metric{
+						{
+							Name:        "cpu.utilization",
+							Description: "CPU utilization percentage",
+							Unit:        "%",
+							Data: &metricspb.Metric_Gauge{
+								Gauge: &metricspb.Gauge{
+									DataPoints: []*metricspb.NumberDataPoint{
+										{
+											Attributes:   []*commonpb.KeyValue{{Key: "cpu", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "0"}}}},
+											TimeUnixNano: now,
+											Value:        &metricspb.NumberDataPoint_AsDouble{AsDouble: 42.5},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	mapped, err := MapMetrics(resourceMetrics)
+	if err != nil {
+		t.Fatalf("mapping metrics: %v", err)
+	}
+	if len(mapped.Series) != 1 {
+		t.Fatalf("mapped series = %d, want 1", len(mapped.Series))
+	}
+	if err := store.InsertSeries(ctx, mapped.Series); err != nil {
+		t.Fatalf("inserting series rows: %v", err)
+	}
+
+	wantID := mapped.Series[0].SeriesID
+	var (
+		metricName  string
+		metricType  string
+		serviceName string
+		hostName    string
+		cpuAttr     string
+	)
+	err = store.conn.QueryRow(ctx,
+		"SELECT MetricName, MetricType, ServiceName, ResourceAttributes['host.name'], Attributes['cpu'] "+
+			"FROM otel_metrics_series WHERE SeriesID = $1 LIMIT 1",
+		wantID,
+	).Scan(&metricName, &metricType, &serviceName, &hostName, &cpuAttr)
+	if err != nil {
+		t.Fatalf("querying series: %v", err)
+	}
+	if metricName != "cpu.utilization" {
+		t.Errorf("MetricName = %q, want cpu.utilization", metricName)
+	}
+	if metricType != "gauge" {
+		t.Errorf("MetricType = %q, want gauge", metricType)
+	}
+	if serviceName != "test-service" {
+		t.Errorf("ServiceName = %q, want test-service", serviceName)
+	}
+	if hostName != "test-host" {
+		t.Errorf("ResourceAttributes['host.name'] = %q, want test-host", hostName)
+	}
+	if cpuAttr != "0" {
+		t.Errorf("Attributes['cpu'] = %q, want 0", cpuAttr)
+	}
+}
+
 func TestGRPCToClickHouse(t *testing.T) {
 	store, cleanup := setupClickHouse(t)
 	defer cleanup()
@@ -338,5 +430,18 @@ func TestGRPCToClickHouse(t *testing.T) {
 	}
 	if value != 99.9 {
 		t.Errorf("expected Value=99.9, got %f", value)
+	}
+
+	// Verify the metric series landed in ClickHouse.
+	var seriesMetricName string
+	err = store.conn.QueryRow(ctx,
+		"SELECT MetricName FROM otel_metrics_series WHERE SeriesID = $1 LIMIT 1",
+		seriesID,
+	).Scan(&seriesMetricName)
+	if err != nil {
+		t.Fatalf("querying series: %v", err)
+	}
+	if seriesMetricName != "e2e.gauge" {
+		t.Errorf("series MetricName = %q, want e2e.gauge", seriesMetricName)
 	}
 }

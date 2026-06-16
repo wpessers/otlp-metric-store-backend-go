@@ -59,6 +59,7 @@ type MetricsStore interface {
 	CreateTables(ctx context.Context) error
 	InsertGauge(ctx context.Context, rows []GaugeRow) error
 	InsertSum(ctx context.Context, rows []SumRow) error
+	InsertSeries(ctx context.Context, rows []MetricSeriesRow) error
 	Close() error
 }
 
@@ -144,6 +145,37 @@ func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) e
 			r.Flags,
 		); err != nil {
 			return fmt.Errorf("appending sum row: %w", err)
+		}
+	}
+	return batch.Send()
+}
+
+// InsertSeries batch-inserts series rows into otel_metrics_series.
+func (s *ClickHouseMetricsStore) InsertSeries(ctx context.Context, rows []MetricSeriesRow) error {
+	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_series (SeriesID, MetricType, ServiceName, MetricName, MetricDescription, MetricUnit, ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, Attributes, AggregationTemporality, IsMonotonic)")
+	if err != nil {
+		return fmt.Errorf("preparing series batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.SeriesID,
+			r.MetricType,
+			r.ServiceName,
+			r.MetricName,
+			r.MetricDescription,
+			r.MetricUnit,
+			r.ResourceAttributes,
+			r.ResourceSchemaUrl,
+			r.ScopeName,
+			r.ScopeVersion,
+			r.ScopeAttributes,
+			r.ScopeDroppedAttrCount,
+			r.ScopeSchemaUrl,
+			r.Attributes,
+			r.AggregationTemporality,
+			r.IsMonotonic,
+		); err != nil {
+			return fmt.Errorf("appending series row: %w", err)
 		}
 	}
 	return batch.Send()

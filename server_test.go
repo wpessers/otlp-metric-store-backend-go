@@ -104,11 +104,13 @@ func server() (colmetricspb.MetricsServiceClient, func()) {
 
 // in-memory MetricsStore to mimic ClickHouse persistence
 type fakeStore struct {
-	gaugeCalls int
-	sumCalls   int
-	gaugeRows  []GaugeRow
-	sumRows    []SumRow
-	insertErr  error
+	gaugeCalls  int
+	sumCalls    int
+	seriesCalls int
+	gaugeRows   []GaugeRow
+	sumRows     []SumRow
+	seriesRows  []MetricSeriesRow
+	insertErr   error
 }
 
 func (f *fakeStore) CreateTables(context.Context) error { return nil }
@@ -129,6 +131,15 @@ func (f *fakeStore) InsertSum(_ context.Context, rows []SumRow) error {
 		return f.insertErr
 	}
 	f.sumRows = append(f.sumRows, rows...)
+	return nil
+}
+
+func (f *fakeStore) InsertSeries(_ context.Context, rows []MetricSeriesRow) error {
+	f.seriesCalls++
+	if f.insertErr != nil {
+		return f.insertErr
+	}
+	f.seriesRows = append(f.seriesRows, rows...)
 	return nil
 }
 
@@ -188,7 +199,7 @@ func sumRequest(service, metric string, value int64, monotonic bool) *colmetrics
 func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("forwards gauge data to the store", func(t *testing.T) {
+	t.Run("forwards gauge data and series to the store", func(t *testing.T) {
 		store := &fakeStore{}
 		srv := newServer("test", store)
 
@@ -205,11 +216,20 @@ func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 		if store.sumCalls != 0 {
 			t.Errorf("InsertSum calls = %d, want 0", store.sumCalls)
 		}
+		if store.seriesCalls != 1 {
+			t.Errorf("InsertSeries calls = %d, want 1", store.seriesCalls)
+		}
 		if len(store.gaugeRows) != 1 {
 			t.Fatalf("gauge rows = %d, want 1", len(store.gaugeRows))
 		}
 		if got := store.gaugeRows[0].Value; got != 42.5 {
 			t.Errorf("Value = %v, want %v", got, 42.5)
+		}
+		if len(store.seriesRows) != 1 {
+			t.Fatalf("series rows = %d, want 1", len(store.seriesRows))
+		}
+		if store.seriesRows[0].SeriesID != store.gaugeRows[0].SeriesID {
+			t.Errorf("series SeriesID (%d) != gauge SeriesID (%d)", store.seriesRows[0].SeriesID, store.gaugeRows[0].SeriesID)
 		}
 	})
 
@@ -236,6 +256,15 @@ func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 		if got := store.sumRows[0].Value; got != 7 {
 			t.Errorf("Value = %v, want %v", got, float64(7))
 		}
+		if store.seriesCalls != 1 {
+			t.Errorf("InsertSeries calls = %d, want 1", store.seriesCalls)
+		}
+		if len(store.seriesRows) != 1 {
+			t.Fatalf("series rows = %d, want 1", len(store.seriesRows))
+		}
+		if store.seriesRows[0].SeriesID != store.sumRows[0].SeriesID {
+			t.Errorf("series SeriesID (%d) != sum SeriesID (%d)", store.seriesRows[0].SeriesID, store.sumRows[0].SeriesID)
+		}
 	})
 
 	t.Run("no insert calls for an empty request", func(t *testing.T) {
@@ -249,8 +278,8 @@ func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 		if resp == nil {
 			t.Fatal("Export() response is nil")
 		}
-		if store.gaugeCalls != 0 || store.sumCalls != 0 {
-			t.Errorf("insert calls = (gauge %d, sum %d), want (0, 0)", store.gaugeCalls, store.sumCalls)
+		if store.gaugeCalls != 0 || store.sumCalls != 0 || store.seriesCalls != 0 {
+			t.Errorf("insert calls = (gauge %d, sum %d, series %d), want (0, 0, 0)", store.gaugeCalls, store.sumCalls, store.seriesCalls)
 		}
 	})
 

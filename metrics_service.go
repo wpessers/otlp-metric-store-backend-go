@@ -34,6 +34,11 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 		return nil, err
 	}
 
+	if len(mapped.Series) > 0 {
+		if err := m.store.InsertSeries(ctx, mapped.Series); err != nil {
+			return nil, err
+		}
+	}
 	if len(mapped.Gauges) > 0 {
 		if err := m.store.InsertGauge(ctx, mapped.Gauges); err != nil {
 			return nil, err
