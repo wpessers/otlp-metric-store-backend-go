@@ -241,8 +241,7 @@ func TestMapMetrics_RejectsZeroTimestamp(t *testing.T) {
 	attr := func(k, v string) []*commonpb.KeyValue {
 		return []*commonpb.KeyValue{{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v}}}}
 	}
-	// One gauge data point with a valid timestamp and one with a zero timestamp,
-	// plus one sum data point with a zero timestamp.
+
 	rm := []*metricspb.ResourceMetrics{{
 		Resource: &resourcepb.Resource{Attributes: attr("service.name", "checkout")},
 		ScopeMetrics: []*metricspb.ScopeMetrics{{

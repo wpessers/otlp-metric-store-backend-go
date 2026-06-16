@@ -50,3 +50,34 @@ command-line flag. The precedence is **flag > env var > built-in default**.
 | `--clickhouseDatabase` | `CLICKHOUSE_DATABASE` | `default` | ClickHouse database |
 | `--clickhouseUsername` | `CLICKHOUSE_USERNAME` | `default` | ClickHouse username |
 | `--clickhousePassword` | `CLICKHOUSE_PASSWORD` | _(empty)_ | ClickHouse password |
+
+## Design
+
+I kept the separate tables per metric type, 1 for gauge and 1 for sum since the histogram, exponential histogram, and summary types were out of scope. The scaffolded tables for those have been kept in the schemas.
+
+The write path now uses 3 tables:
+- `otel_metrics_series`: stores resource attributes, scope metadata, metric metadata, attributes, and Sum-specific metadata (aggregation temporality and monotonicity)
+- `otel_metrics_gauge_points`: stores Gauge datapoints
+- `otel_metrics_sum_points`: stores Sum datapoints
+
+The Gauge and Sum point tables contain only:
+
+- `SeriesID`
+- `StartTimeUnix`
+- `TimeUnix`
+- `Value`
+- `Flags`
+
+Metrics metadata is stored once in the `otel_metrics_series` lookup table, and datapoints in the gauge and sum tables reference those rows through a deterministic `SeriesID`.
+`SeriesID` is calculated by hashing the identifying metadata of the metrics.
+
+## Limitations
+
+- Currently only focussing on gauge and sum type metrics.
+- Possibly missing OTLP edge cases regarding validation, currently only validating that datapoints have `TimeUnixNano != 0`
+- `SeriesID` is computed as a 64-bit hash of a canonical representation of the metric series identity. Maybe collision risk is too high, I've opted for this datatype since the assignment explicitly states low cardinality. A production implementation could reduce the risk by using a wider identifier, such as a 128-bit hash. Or some collision detection mechanism.
+- The current implementation for calculating the `SeriesID` relies on `json.Marshal` for canonicalization of the series identity before hashing. This is deterministic for the current `map[string]string` fields, but it is not an explicitly versioned canonical format and allocates intermediate JSON bytes. For prod I would probably use a dedicated low-allocation canonical encoder.
+- Series rows are deduplicated within a single OTLP export request, for prod I would probably add a cache (with max size and TTL) to deduplicate across requests.
+- Rows are inserted into ClickHouse in batches per OTLP export request, batching across requests would be a possible improvement. Alternatively ClickHouse async inserts could be used.
+- Production deployment readiness is incomplete: this repository is focused on local development and does not include a Dockerfile, Kubernetes manifests, readiness/liveness probes, or Kubernetes lifecycle configuration. Before running on Kubernetes, the OTLP export request deadline, ClickHouse insert/query timeout, gRPC graceful shutdown timeout, OpenTelemetry and ClickHouse shutdown contexts, optional `preStop` hook, and Kubernetes `terminationGracePeriodSeconds` should be aligned properly so in-flight exports can either complete during shutdown or fail quickly enough for the client to retry.
+- No advanced ClickHouse client config: pool sizing, TLS(!) ,...
