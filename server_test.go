@@ -208,8 +208,8 @@ func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 		if len(store.gaugeRows) != 1 {
 			t.Fatalf("gauge rows = %d, want 1", len(store.gaugeRows))
 		}
-		if got := store.gaugeRows[0].MetricName; got != "demo.gauge" {
-			t.Errorf("MetricName = %q, want %q", got, "demo.gauge")
+		if got := store.gaugeRows[0].Value; got != 42.5 {
+			t.Errorf("Value = %v, want %v", got, 42.5)
 		}
 	})
 
@@ -233,8 +233,8 @@ func TestMetricsServiceServer_Export_WithStore(t *testing.T) {
 		if len(store.sumRows) != 1 {
 			t.Fatalf("sum rows = %d, want 1", len(store.sumRows))
 		}
-		if got := store.sumRows[0].MetricName; got != "demo.sum" {
-			t.Errorf("MetricName = %q, want %q", got, "demo.sum")
+		if got := store.sumRows[0].Value; got != 7 {
+			t.Errorf("Value = %v, want %v", got, float64(7))
 		}
 	})
 

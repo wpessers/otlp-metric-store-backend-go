@@ -12,6 +12,10 @@ import (
 // MetricMetadata identifies a metric series independently from its point values.
 type MetricMetadata struct {
 	MetricType             string
+	ServiceName            string
+	MetricName             string
+	MetricDescription      string
+	MetricUnit             string
 	ResourceAttributes     map[string]string
 	ResourceSchemaUrl      string
 	ScopeName              string
@@ -19,10 +23,6 @@ type MetricMetadata struct {
 	ScopeAttributes        map[string]string
 	ScopeDroppedAttrCount  uint32
 	ScopeSchemaUrl         string
-	ServiceName            string
-	MetricName             string
-	MetricDescription      string
-	MetricUnit             string
 	Attributes             map[string]string
 	AggregationTemporality int32
 	IsMonotonic            bool
@@ -39,15 +39,19 @@ type NumberDataPoint struct {
 // GaugeRow represents a single gauge data point for ClickHouse insertion.
 type GaugeRow struct {
 	SeriesID uint64
-	MetricMetadata
 	NumberDataPoint
 }
 
 // SumRow represents a single sum data point for ClickHouse insertion.
 type SumRow struct {
 	SeriesID uint64
-	MetricMetadata
 	NumberDataPoint
+}
+
+// MetricSeriesRow represents a single metric series for ClickHouse insertion.
+type MetricSeriesRow struct {
+	SeriesID uint64
+	MetricMetadata
 }
 
 // MetricsStore defines the interface for storing metrics in ClickHouse.

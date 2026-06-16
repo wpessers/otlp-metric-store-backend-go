@@ -146,7 +146,7 @@ func TestInsertGauge(t *testing.T) {
 		},
 	}
 
-	rows := MapGaugeRows(resourceMetrics)
+	rows := MapMetrics(resourceMetrics).Gauges
 	if err := store.InsertGauge(ctx, rows); err != nil {
 		t.Fatalf("inserting gauge rows: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestInsertSum(t *testing.T) {
 		},
 	}
 
-	rows := MapSumRows(resourceMetrics)
+	rows := MapMetrics(resourceMetrics).Sums
 	if err := store.InsertSum(ctx, rows); err != nil {
 		t.Fatalf("inserting sum rows: %v", err)
 	}
