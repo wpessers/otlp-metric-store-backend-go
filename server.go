@@ -89,10 +89,7 @@ func main() {
 }
 
 func run() (err error) {
-	slog.SetDefault(logger)
-	logger.Info("Starting application")
-
-	// Set up OpenTelemetry.
+	// Set up OpenTelemetry
 	otelShutdown, err := setupOTelSDK(context.Background())
 	if err != nil {
 		return
@@ -102,6 +99,9 @@ func run() (err error) {
 	defer func() {
 		err = errors.Join(err, otelShutdown(context.Background()))
 	}()
+
+	slog.SetDefault(logger)
+	logger.Info("Starting application")
 
 	flag.Parse()
 
