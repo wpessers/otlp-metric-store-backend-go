@@ -9,32 +9,45 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
+// MetricMetadata identifies a metric series independently from its point values.
+type MetricMetadata struct {
+	MetricType             string
+	ResourceAttributes     map[string]string
+	ResourceSchemaUrl      string
+	ScopeName              string
+	ScopeVersion           string
+	ScopeAttributes        map[string]string
+	ScopeDroppedAttrCount  uint32
+	ScopeSchemaUrl         string
+	ServiceName            string
+	MetricName             string
+	MetricDescription      string
+	MetricUnit             string
+	Attributes             map[string]string
+	AggregationTemporality int32
+	IsMonotonic            bool
+}
+
+// NumberDataPoint represents the point fields shared by gauge and sum metrics.
+type NumberDataPoint struct {
+	StartTimeUnix time.Time
+	TimeUnix      time.Time
+	Value         float64
+	Flags         uint32
+}
+
 // GaugeRow represents a single gauge data point for ClickHouse insertion.
 type GaugeRow struct {
-	SeriesID              uint64
-	ResourceAttributes    map[string]string
-	ResourceSchemaUrl     string
-	ScopeName             string
-	ScopeVersion          string
-	ScopeAttributes       map[string]string
-	ScopeDroppedAttrCount uint32
-	ScopeSchemaUrl        string
-	ServiceName           string
-	MetricName            string
-	MetricDescription     string
-	MetricUnit            string
-	Attributes            map[string]string
-	StartTimeUnix         time.Time
-	TimeUnix              time.Time
-	Value                 float64
-	Flags                 uint32
+	SeriesID uint64
+	MetricMetadata
+	NumberDataPoint
 }
 
 // SumRow represents a single sum data point for ClickHouse insertion.
 type SumRow struct {
-	GaugeRow
-	AggregationTemporality int32
-	IsMonotonic            bool
+	SeriesID uint64
+	MetricMetadata
+	NumberDataPoint
 }
 
 // MetricsStore defines the interface for storing metrics in ClickHouse.

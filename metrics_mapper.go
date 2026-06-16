@@ -10,7 +10,11 @@ import (
 )
 
 // TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
-const placeholderSeriesID uint64 = 0
+const (
+	metricTypeGauge     = "gauge"
+	metricTypeSum       = "sum"
+	placeholderSeriesID = uint64(0)
+)
 
 // serviceName extracts the service.name from resource attributes, returning "" if not found.
 func serviceName(resource *resourcepb.Resource) string {
@@ -90,23 +94,28 @@ func MapGaugeRows(resourceMetrics []*metricspb.ResourceMetrics) []GaugeRow {
 				}
 				for _, dp := range gauge.GetDataPoints() {
 					rows = append(rows, GaugeRow{
-						SeriesID:              placeholderSeriesID,
-						ResourceAttributes:    resAttrs,
-						ResourceSchemaUrl:     resSchemaUrl,
-						ScopeName:             scope.GetName(),
-						ScopeVersion:          scope.GetVersion(),
-						ScopeAttributes:       scopeAttrs,
-						ScopeDroppedAttrCount: scope.GetDroppedAttributesCount(),
-						ScopeSchemaUrl:        sm.GetSchemaUrl(),
-						ServiceName:           svcName,
-						MetricName:            metric.GetName(),
-						MetricDescription:     metric.GetDescription(),
-						MetricUnit:            metric.GetUnit(),
-						Attributes:            kvToMap(dp.GetAttributes()),
-						StartTimeUnix:         nanosToTime(dp.GetStartTimeUnixNano()),
-						TimeUnix:              nanosToTime(dp.GetTimeUnixNano()),
-						Value:                 numberDataPointValue(dp),
-						Flags:                 dp.GetFlags(),
+						SeriesID: placeholderSeriesID,
+						MetricMetadata: MetricMetadata{
+							MetricType:            metricTypeGauge,
+							ResourceAttributes:    resAttrs,
+							ResourceSchemaUrl:     resSchemaUrl,
+							ScopeName:             scope.GetName(),
+							ScopeVersion:          scope.GetVersion(),
+							ScopeAttributes:       scopeAttrs,
+							ScopeDroppedAttrCount: scope.GetDroppedAttributesCount(),
+							ScopeSchemaUrl:        sm.GetSchemaUrl(),
+							ServiceName:           svcName,
+							MetricName:            metric.GetName(),
+							MetricDescription:     metric.GetDescription(),
+							MetricUnit:            metric.GetUnit(),
+							Attributes:            kvToMap(dp.GetAttributes()),
+						},
+						NumberDataPoint: NumberDataPoint{
+							StartTimeUnix: nanosToTime(dp.GetStartTimeUnixNano()),
+							TimeUnix:      nanosToTime(dp.GetTimeUnixNano()),
+							Value:         numberDataPointValue(dp),
+							Flags:         dp.GetFlags(),
+						},
 					})
 				}
 			}
@@ -135,27 +144,30 @@ func MapSumRows(resourceMetrics []*metricspb.ResourceMetrics) []SumRow {
 				}
 				for _, dp := range sum.GetDataPoints() {
 					rows = append(rows, SumRow{
-						GaugeRow: GaugeRow{
-							SeriesID:              placeholderSeriesID,
-							ResourceAttributes:    resAttrs,
-							ResourceSchemaUrl:     resSchemaUrl,
-							ScopeName:             scope.GetName(),
-							ScopeVersion:          scope.GetVersion(),
-							ScopeAttributes:       scopeAttrs,
-							ScopeDroppedAttrCount: scope.GetDroppedAttributesCount(),
-							ScopeSchemaUrl:        sm.GetSchemaUrl(),
-							ServiceName:           svcName,
-							MetricName:            metric.GetName(),
-							MetricDescription:     metric.GetDescription(),
-							MetricUnit:            metric.GetUnit(),
-							Attributes:            kvToMap(dp.GetAttributes()),
-							StartTimeUnix:         nanosToTime(dp.GetStartTimeUnixNano()),
-							TimeUnix:              nanosToTime(dp.GetTimeUnixNano()),
-							Value:                 numberDataPointValue(dp),
-							Flags:                 dp.GetFlags(),
+						SeriesID: placeholderSeriesID,
+						MetricMetadata: MetricMetadata{
+							MetricType:             metricTypeSum,
+							ResourceAttributes:     resAttrs,
+							ResourceSchemaUrl:      resSchemaUrl,
+							ScopeName:              scope.GetName(),
+							ScopeVersion:           scope.GetVersion(),
+							ScopeAttributes:        scopeAttrs,
+							ScopeDroppedAttrCount:  scope.GetDroppedAttributesCount(),
+							ScopeSchemaUrl:         sm.GetSchemaUrl(),
+							ServiceName:            svcName,
+							MetricName:             metric.GetName(),
+							MetricDescription:      metric.GetDescription(),
+							MetricUnit:             metric.GetUnit(),
+							Attributes:             kvToMap(dp.GetAttributes()),
+							AggregationTemporality: int32(sum.GetAggregationTemporality()),
+							IsMonotonic:            sum.GetIsMonotonic(),
 						},
-						AggregationTemporality: int32(sum.GetAggregationTemporality()),
-						IsMonotonic:            sum.GetIsMonotonic(),
+						NumberDataPoint: NumberDataPoint{
+							StartTimeUnix: nanosToTime(dp.GetStartTimeUnixNano()),
+							TimeUnix:      nanosToTime(dp.GetTimeUnixNano()),
+							Value:         numberDataPointValue(dp),
+							Flags:         dp.GetFlags(),
+						},
 					})
 				}
 			}
