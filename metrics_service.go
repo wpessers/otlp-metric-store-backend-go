@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -36,17 +37,17 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 
 	if len(mapped.Series) > 0 {
 		if err := m.store.InsertSeries(ctx, mapped.Series); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("inserting metric series: %w", err)
 		}
 	}
 	if len(mapped.Gauges) > 0 {
 		if err := m.store.InsertGauge(ctx, mapped.Gauges); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("inserting gauge points: %w", err)
 		}
 	}
 	if len(mapped.Sums) > 0 {
 		if err := m.store.InsertSum(ctx, mapped.Sums); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("inserting sum points: %w", err)
 		}
 	}
 
