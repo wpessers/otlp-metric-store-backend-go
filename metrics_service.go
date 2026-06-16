@@ -20,7 +20,6 @@ func newServer(addr string, store MetricsStore) colmetricspb.MetricsServiceServe
 }
 
 func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
-	slog.DebugContext(ctx, "Received ExportMetricsServiceRequest")
 	exportRequestsCounter.Add(ctx, 1)
 
 	// A nil store means no persistent store was configured. We want to return early here.
@@ -41,22 +40,39 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 
 	if len(mapped.Series) > 0 {
 		if err := m.store.InsertSeries(ctx, mapped.Series); err != nil {
+			logMetricExportFailure(ctx, "failed to insert metric series", mapped, err)
 			exportFailuresCounter.Add(ctx, 1)
 			return nil, fmt.Errorf("inserting metric series: %w", err)
 		}
 	}
 	if len(mapped.Gauges) > 0 {
 		if err := m.store.InsertGauge(ctx, mapped.Gauges); err != nil {
+			logMetricExportFailure(ctx, "failed to insert gauge points", mapped, err)
 			exportFailuresCounter.Add(ctx, 1)
 			return nil, fmt.Errorf("inserting gauge points: %w", err)
 		}
 	}
 	if len(mapped.Sums) > 0 {
 		if err := m.store.InsertSum(ctx, mapped.Sums); err != nil {
+			logMetricExportFailure(ctx, "failed to insert sum points", mapped, err)
 			exportFailuresCounter.Add(ctx, 1)
 			return nil, fmt.Errorf("inserting sum points: %w", err)
 		}
 	}
 
+	slog.DebugContext(ctx, "processed metric export request", metricExportLogAttributes(mapped)...)
 	return &colmetricspb.ExportMetricsServiceResponse{}, nil
+}
+
+func logMetricExportFailure(ctx context.Context, message string, mapped MappedMetrics, err error) {
+	attrs := append(metricExportLogAttributes(mapped), slog.Any("error", err))
+	slog.ErrorContext(ctx, message, attrs...)
+}
+
+func metricExportLogAttributes(mapped MappedMetrics) []any {
+	return []any{
+		slog.Int("series_rows", len(mapped.Series)),
+		slog.Int("gauge_points", len(mapped.Gauges)),
+		slog.Int("sum_points", len(mapped.Sums)),
+	}
 }
