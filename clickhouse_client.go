@@ -11,6 +11,7 @@ import (
 
 // GaugeRow represents a single gauge data point for ClickHouse insertion.
 type GaugeRow struct {
+	SeriesID              uint64
 	ResourceAttributes    map[string]string
 	ResourceSchemaUrl     string
 	ScopeName             string
@@ -73,9 +74,10 @@ func NewClickHouseMetricsStore(ctx context.Context, addr string, database string
 	return &ClickHouseMetricsStore{conn: conn}, nil
 }
 
-// CreateTables executes DDL for all 5 metric tables.
+// CreateTables executes DDL for the metric metadata and point tables.
 func (s *ClickHouseMetricsStore) CreateTables(ctx context.Context) error {
 	ddls := []string{
+		createSeriesTableSQL,
 		createGaugeTableSQL,
 		createSumTableSQL,
 		createHistogramTableSQL,
@@ -90,26 +92,15 @@ func (s *ClickHouseMetricsStore) CreateTables(ctx context.Context) error {
 	return nil
 }
 
-// InsertGauge batch-inserts gauge rows into otel_metrics_gauge.
+// InsertGauge batch-inserts gauge rows into otel_metrics_gauge_points.
 func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRow) error {
-	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_gauge")
+	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_gauge_points (SeriesID, StartTimeUnix, TimeUnix, Value, Flags)")
 	if err != nil {
 		return fmt.Errorf("preparing gauge batch: %w", err)
 	}
 	for _, r := range rows {
 		if err := batch.Append(
-			r.ResourceAttributes,
-			r.ResourceSchemaUrl,
-			r.ScopeName,
-			r.ScopeVersion,
-			r.ScopeAttributes,
-			r.ScopeDroppedAttrCount,
-			r.ScopeSchemaUrl,
-			r.ServiceName,
-			r.MetricName,
-			r.MetricDescription,
-			r.MetricUnit,
-			r.Attributes,
+			r.SeriesID,
 			r.StartTimeUnix,
 			r.TimeUnix,
 			r.Value,
@@ -121,32 +112,19 @@ func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRo
 	return batch.Send()
 }
 
-// InsertSum batch-inserts sum rows into otel_metrics_sum.
+// InsertSum batch-inserts sum rows into otel_metrics_sum_points.
 func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) error {
-	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_sum")
+	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_sum_points (SeriesID, StartTimeUnix, TimeUnix, Value, Flags)")
 	if err != nil {
 		return fmt.Errorf("preparing sum batch: %w", err)
 	}
 	for _, r := range rows {
 		if err := batch.Append(
-			r.ResourceAttributes,
-			r.ResourceSchemaUrl,
-			r.ScopeName,
-			r.ScopeVersion,
-			r.ScopeAttributes,
-			r.ScopeDroppedAttrCount,
-			r.ScopeSchemaUrl,
-			r.ServiceName,
-			r.MetricName,
-			r.MetricDescription,
-			r.MetricUnit,
-			r.Attributes,
+			r.SeriesID,
 			r.StartTimeUnix,
 			r.TimeUnix,
 			r.Value,
 			r.Flags,
-			r.AggregationTemporality,
-			r.IsMonotonic,
 		); err != nil {
 			return fmt.Errorf("appending sum row: %w", err)
 		}

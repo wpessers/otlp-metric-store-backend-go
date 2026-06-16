@@ -9,6 +9,9 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 )
 
+// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
+const placeholderSeriesID uint64 = 0
+
 // serviceName extracts the service.name from resource attributes, returning "" if not found.
 func serviceName(resource *resourcepb.Resource) string {
 	if resource == nil {
@@ -87,6 +90,7 @@ func MapGaugeRows(resourceMetrics []*metricspb.ResourceMetrics) []GaugeRow {
 				}
 				for _, dp := range gauge.GetDataPoints() {
 					rows = append(rows, GaugeRow{
+						SeriesID:              placeholderSeriesID,
 						ResourceAttributes:    resAttrs,
 						ResourceSchemaUrl:     resSchemaUrl,
 						ScopeName:             scope.GetName(),
@@ -132,6 +136,7 @@ func MapSumRows(resourceMetrics []*metricspb.ResourceMetrics) []SumRow {
 				for _, dp := range sum.GetDataPoints() {
 					rows = append(rows, SumRow{
 						GaugeRow: GaugeRow{
+							SeriesID:              placeholderSeriesID,
 							ResourceAttributes:    resAttrs,
 							ResourceSchemaUrl:     resSchemaUrl,
 							ScopeName:             scope.GetName(),

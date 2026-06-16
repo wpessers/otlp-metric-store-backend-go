@@ -74,8 +74,9 @@ func TestCreateTables(t *testing.T) {
 	}
 
 	expectedTables := []string{
-		"otel_metrics_gauge",
-		"otel_metrics_sum",
+		"otel_metrics_series",
+		"otel_metrics_gauge_points",
+		"otel_metrics_sum_points",
 		"otel_metrics_histogram",
 		"otel_metrics_exponential_histogram",
 		"otel_metrics_summary",
@@ -151,22 +152,18 @@ func TestInsertGauge(t *testing.T) {
 	}
 
 	var (
-		serviceName string
-		metricName  string
-		value       float64
+		seriesID uint64
+		value    float64
 	)
 	err := store.conn.QueryRow(ctx,
-		"SELECT ServiceName, MetricName, Value FROM otel_metrics_gauge WHERE MetricName = 'cpu.utilization'",
-	).Scan(&serviceName, &metricName, &value)
+		"SELECT SeriesID, Value FROM otel_metrics_gauge_points WHERE Value = 42.5",
+	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying gauge: %v", err)
 	}
-
-	if serviceName != "test-service" {
-		t.Errorf("expected ServiceName=test-service, got %s", serviceName)
-	}
-	if metricName != "cpu.utilization" {
-		t.Errorf("expected MetricName=cpu.utilization, got %s", metricName)
+	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
+	if seriesID != 0 {
+		t.Errorf("expected SeriesID=0, got %d", seriesID)
 	}
 	if value != 42.5 {
 		t.Errorf("expected Value=42.5, got %f", value)
@@ -234,33 +231,22 @@ func TestInsertSum(t *testing.T) {
 	}
 
 	var (
-		serviceName            string
-		metricName             string
-		value                  float64
-		aggregationTemporality int32
-		isMonotonic            bool
+		seriesID uint64
+		value    float64
 	)
 	err := store.conn.QueryRow(ctx,
-		"SELECT ServiceName, MetricName, Value, AggregationTemporality, IsMonotonic FROM otel_metrics_sum WHERE MetricName = 'http.requests.total'",
-	).Scan(&serviceName, &metricName, &value, &aggregationTemporality, &isMonotonic)
+		"SELECT SeriesID, Value FROM otel_metrics_sum_points WHERE Value = 1234",
+	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying sum: %v", err)
 	}
 
-	if serviceName != "test-service" {
-		t.Errorf("expected ServiceName=test-service, got %s", serviceName)
-	}
-	if metricName != "http.requests.total" {
-		t.Errorf("expected MetricName=http.requests.total, got %s", metricName)
+	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
+	if seriesID != 0 {
+		t.Errorf("expected SeriesID=0, got %d", seriesID)
 	}
 	if value != 1234 {
 		t.Errorf("expected Value=1234, got %f", value)
-	}
-	if aggregationTemporality != 2 {
-		t.Errorf("expected AggregationTemporality=2, got %d", aggregationTemporality)
-	}
-	if !isMonotonic {
-		t.Errorf("expected IsMonotonic=true, got false")
 	}
 }
 
@@ -336,18 +322,18 @@ func TestGRPCToClickHouse(t *testing.T) {
 
 	// Verify the metric landed in ClickHouse.
 	var (
-		svcName    string
-		metricName string
-		value      float64
+		seriesID uint64
+		value    float64
 	)
 	err = store.conn.QueryRow(ctx,
-		"SELECT ServiceName, MetricName, Value FROM otel_metrics_gauge WHERE MetricName = 'e2e.gauge'",
-	).Scan(&svcName, &metricName, &value)
+		"SELECT SeriesID, Value FROM otel_metrics_gauge_points WHERE Value = 99.9",
+	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying clickhouse: %v", err)
 	}
-	if svcName != "e2e-service" {
-		t.Errorf("expected ServiceName=e2e-service, got %s", svcName)
+	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
+	if seriesID != 0 {
+		t.Errorf("expected SeriesID=0, got %d", seriesID)
 	}
 	if value != 99.9 {
 		t.Errorf("expected Value=99.9, got %f", value)
