@@ -24,16 +24,44 @@ import (
 const name = "otlp-metrics-store-backend"
 
 var (
-	meter                  = otel.Meter(name)
-	logger                 = otelslog.NewLogger(name)
-	metricsReceivedCounter metric.Int64Counter
+	meter                 = otel.Meter(name)
+	logger                = otelslog.NewLogger(name)
+	exportRequestsCounter metric.Int64Counter
+	exportFailuresCounter metric.Int64Counter
+	seriesRowsCounter     metric.Int64Counter
+	gaugePointsCounter    metric.Int64Counter
+	sumPointsCounter      metric.Int64Counter
 )
 
 func init() {
 	var err error
-	metricsReceivedCounter, err = meter.Int64Counter("com.dash0.homeexercise.metrics.received",
-		metric.WithDescription("The number of metrics received by otlp-metrics-store-backend"),
-		metric.WithUnit("{metric}"))
+	exportRequestsCounter, err = meter.Int64Counter("otlp_metric_store_export_requests_total",
+		metric.WithDescription("Number of OTLP metric export requests received"),
+		metric.WithUnit("{request}"))
+	if err != nil {
+		panic(err)
+	}
+	exportFailuresCounter, err = meter.Int64Counter("otlp_metric_store_export_failures_total",
+		metric.WithDescription("Number of OTLP metric export requests that failed"),
+		metric.WithUnit("{request}"))
+	if err != nil {
+		panic(err)
+	}
+	seriesRowsCounter, err = meter.Int64Counter("otlp_metric_store_series_rows_total",
+		metric.WithDescription("Number of metric series metadata rows mapped"),
+		metric.WithUnit("{row}"))
+	if err != nil {
+		panic(err)
+	}
+	gaugePointsCounter, err = meter.Int64Counter("otlp_metric_store_gauge_points_total",
+		metric.WithDescription("Number of gauge datapoints mapped"),
+		metric.WithUnit("{point}"))
+	if err != nil {
+		panic(err)
+	}
+	sumPointsCounter, err = meter.Int64Counter("otlp_metric_store_sum_points_total",
+		metric.WithDescription("Number of sum datapoints mapped"),
+		metric.WithUnit("{point}"))
 	if err != nil {
 		panic(err)
 	}
