@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -17,9 +21,22 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// returns the value of the environment variable named key, or def when unset
+func envOrDefault(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
 var (
 	listenAddr            = flag.String("listenAddr", "localhost:4317", "The listen address")
 	maxReceiveMessageSize = flag.Int("maxReceiveMessageSize", 16777216, "The max message size in bytes the server can receive")
+
+	clickhouseAddr     = flag.String("clickhouseAddr", envOrDefault("CLICKHOUSE_ADDR", "localhost:9000"), "ClickHouse native address host:port")
+	clickhouseDatabase = flag.String("clickhouseDatabase", envOrDefault("CLICKHOUSE_DATABASE", "default"), "ClickHouse database")
+	clickhouseUsername = flag.String("clickhouseUsername", envOrDefault("CLICKHOUSE_USERNAME", "default"), "ClickHouse username")
+	clickhousePassword = flag.String("clickhousePassword", envOrDefault("CLICKHOUSE_PASSWORD", ""), "ClickHouse password (prefer the CLICKHOUSE_PASSWORD env var)")
 )
 
 const name = "otlp-metrics-store-backend"
@@ -42,7 +59,8 @@ func init() {
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatalln(err)
+		fmt.Fprintln(os.Stderr, "fatal:", err)
+		os.Exit(1)
 	}
 }
 
@@ -63,6 +81,26 @@ func run() (err error) {
 
 	flag.Parse()
 
+	// Gracefully shutdown the gRPC server on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	slog.Debug("Connecting to ClickHouse",
+		slog.String("clickhouseAddr", *clickhouseAddr),
+		slog.String("clickhouseDatabase", *clickhouseDatabase),
+		slog.String("clickhouseUsername", *clickhouseUsername))
+	store, err := NewClickHouseMetricsStore(ctx, *clickhouseAddr, *clickhouseDatabase, *clickhouseUsername, *clickhousePassword)
+	if err != nil {
+		return fmt.Errorf("connecting to clickhouse at %s: %w", *clickhouseAddr, err)
+	}
+	defer func() {
+		err = errors.Join(err, store.Close())
+	}()
+
+	if err := store.CreateTables(ctx); err != nil {
+		return fmt.Errorf("creating clickhouse tables: %w", err)
+	}
+
 	slog.Debug("Starting listener", slog.String("listenAddr", *listenAddr))
 	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -74,9 +112,29 @@ func run() (err error) {
 		grpc.MaxRecvMsgSize(*maxReceiveMessageSize),
 		grpc.Creds(insecure.NewCredentials()),
 	)
-	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(*listenAddr, nil))
+	colmetricspb.RegisterMetricsServiceServer(grpcServer, newServer(*listenAddr, store))
 
 	slog.Debug("Starting gRPC server")
 
-	return grpcServer.Serve(listener)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- grpcServer.Serve(listener) }()
+
+	select {
+	case err = <-serveErr:
+		return err
+	case <-ctx.Done():
+		slog.Info("Shutdown signal received, stopping gRPC server")
+		stopped := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+		case <-time.After(10 * time.Second): // TODO: make this configurable
+			slog.Warn("Graceful shutdown timed out, forcing stop")
+			grpcServer.Stop()
+		}
+		return nil
+	}
 }

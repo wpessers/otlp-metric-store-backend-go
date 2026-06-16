@@ -22,18 +22,22 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 	slog.DebugContext(ctx, "Received ExportMetricsServiceRequest")
 	metricsReceivedCounter.Add(ctx, 1)
 
-	if m.store != nil {
-		rm := request.GetResourceMetrics()
+	// A nil store means no persistent store was configured. We want to return early here.
+	if m.store == nil {
+		slog.WarnContext(ctx, "metrics store is nil, dropping metrics (no persistence configured)")
+		return &colmetricspb.ExportMetricsServiceResponse{}, nil
+	}
 
-		if gaugeRows := MapGaugeRows(rm); len(gaugeRows) > 0 {
-			if err := m.store.InsertGauge(ctx, gaugeRows); err != nil {
-				return nil, err
-			}
+	rm := request.GetResourceMetrics()
+
+	if gaugeRows := MapGaugeRows(rm); len(gaugeRows) > 0 {
+		if err := m.store.InsertGauge(ctx, gaugeRows); err != nil {
+			return nil, err
 		}
-		if sumRows := MapSumRows(rm); len(sumRows) > 0 {
-			if err := m.store.InsertSum(ctx, sumRows); err != nil {
-				return nil, err
-			}
+	}
+	if sumRows := MapSumRows(rm); len(sumRows) > 0 {
+		if err := m.store.InsertSum(ctx, sumRows); err != nil {
+			return nil, err
 		}
 	}
 

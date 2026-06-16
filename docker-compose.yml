@@ -1,0 +1,9 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.2
+    ports:
+      - "${CLICKHOUSE_HOST_PORT:-9000}:9000" # native protocol (matches the clickhouseAddr default)
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123" # HTTP interface (clickhouse-client / debugging)
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: test

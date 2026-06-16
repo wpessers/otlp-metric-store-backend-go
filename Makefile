@@ -1,9 +1,15 @@
 MODULE := otlp-metrics-store-backend
 
-.PHONY: build run test test-integration test-all fmt vet lint tidy clean
+.PHONY: build run test test-integration test-all fmt vet lint tidy clean compose-up compose-down
 
 build:
 	go build ./...
+
+compose-up:
+	docker compose up -d clickhouse
+
+compose-down:
+	docker compose down
 
 run:
 	go run .
