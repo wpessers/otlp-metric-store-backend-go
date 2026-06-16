@@ -21,24 +21,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// returns the value of the environment variable named key, or def when unset
-func envOrDefault(key, def string) string {
-	if v, ok := os.LookupEnv(key); ok {
-		return v
-	}
-	return def
-}
-
-var (
-	listenAddr            = flag.String("listenAddr", "localhost:4317", "The listen address")
-	maxReceiveMessageSize = flag.Int("maxReceiveMessageSize", 16777216, "The max message size in bytes the server can receive")
-
-	clickhouseAddr     = flag.String("clickhouseAddr", envOrDefault("CLICKHOUSE_ADDR", "localhost:9000"), "ClickHouse native address host:port")
-	clickhouseDatabase = flag.String("clickhouseDatabase", envOrDefault("CLICKHOUSE_DATABASE", "default"), "ClickHouse database")
-	clickhouseUsername = flag.String("clickhouseUsername", envOrDefault("CLICKHOUSE_USERNAME", "default"), "ClickHouse username")
-	clickhousePassword = flag.String("clickhousePassword", envOrDefault("CLICKHOUSE_PASSWORD", ""), "ClickHouse password (prefer the CLICKHOUSE_PASSWORD env var)")
-)
-
 const name = "otlp-metrics-store-backend"
 
 var (
@@ -131,7 +113,7 @@ func run() (err error) {
 		}()
 		select {
 		case <-stopped:
-		case <-time.After(10 * time.Second): // TODO: make this configurable
+		case <-time.After(*shutdownTimeout):
 			slog.Warn("Graceful shutdown timed out, forcing stop")
 			grpcServer.Stop()
 		}

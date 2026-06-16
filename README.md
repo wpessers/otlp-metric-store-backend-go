@@ -38,12 +38,14 @@ The server listens for OTLP/gRPC on `localhost:4317` by default.
 
 ## Configuration
 
-All settings are command-line flags. The ClickHouse ones can be configured through environment variables.
+Every setting can be provided as an environment variable or overridden with the matching
+command-line flag. The precedence is **flag > env var > built-in default**.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--listenAddr` | None | `localhost:4317` | gRPC listen address |
-| `--maxReceiveMessageSize` | None | `16777216` | Max gRPC receive message size (bytes) |
+| `--listenAddr` | `LISTEN_ADDR` | `localhost:4317` | gRPC listen address |
+| `--maxReceiveMessageSize` | `MAX_RECEIVE_MESSAGE_SIZE` | `16777216` | Max gRPC receive message size (bytes) |
+| `--shutdownTimeout` | `SHUTDOWN_TIMEOUT` | `10s` | Max wait for graceful shutdown before forcing stop (e.g. `15s`, `1m`) |
 | `--clickhouseAddr` | `CLICKHOUSE_ADDR` | `localhost:9000` | ClickHouse native address `host:port` |
 | `--clickhouseDatabase` | `CLICKHOUSE_DATABASE` | `default` | ClickHouse database |
 | `--clickhouseUsername` | `CLICKHOUSE_USERNAME` | `default` | ClickHouse username |

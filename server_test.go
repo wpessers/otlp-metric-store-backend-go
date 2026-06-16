@@ -100,8 +100,6 @@ func server() (colmetricspb.MetricsServiceClient, func()) {
 	return client, closer
 }
 
-// TODO: add tests for the EnvOrDefault wrapper func, or refactor this config loading logic entirely
-
 // in-memory MetricsStore to mimic ClickHouse persistence
 type fakeStore struct {
 	gaugeCalls  int
