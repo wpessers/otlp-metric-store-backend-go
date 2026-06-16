@@ -112,6 +112,10 @@ func (s *ClickHouseMetricsStore) CreateTables(ctx context.Context) error {
 
 // InsertGauge batch-inserts gauge rows into otel_metrics_gauge_points.
 func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
 	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_gauge_points (SeriesID, StartTimeUnix, TimeUnix, Value, Flags)")
 	if err != nil {
 		return fmt.Errorf("preparing gauge batch: %w", err)
@@ -132,6 +136,10 @@ func (s *ClickHouseMetricsStore) InsertGauge(ctx context.Context, rows []GaugeRo
 
 // InsertSum batch-inserts sum rows into otel_metrics_sum_points.
 func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
 	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_sum_points (SeriesID, StartTimeUnix, TimeUnix, Value, Flags)")
 	if err != nil {
 		return fmt.Errorf("preparing sum batch: %w", err)
@@ -152,6 +160,10 @@ func (s *ClickHouseMetricsStore) InsertSum(ctx context.Context, rows []SumRow) e
 
 // InsertSeries batch-inserts series rows into otel_metrics_series.
 func (s *ClickHouseMetricsStore) InsertSeries(ctx context.Context, rows []MetricSeriesRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
 	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO otel_metrics_series (SeriesID, MetricType, ServiceName, MetricName, MetricDescription, MetricUnit, ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, Attributes, AggregationTemporality, IsMonotonic)")
 	if err != nil {
 		return fmt.Errorf("preparing series batch: %w", err)

@@ -96,6 +96,40 @@ func TestCreateTables(t *testing.T) {
 	}
 }
 
+func TestEmptyInsertsAreNoops(t *testing.T) {
+	store, cleanup := setupClickHouse(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	if err := store.CreateTables(ctx); err != nil {
+		t.Fatalf("creating tables: %v", err)
+	}
+
+	if err := store.InsertGauge(ctx, nil); err != nil {
+		t.Fatalf("inserting empty gauge rows: %v", err)
+	}
+	if err := store.InsertSum(ctx, nil); err != nil {
+		t.Fatalf("inserting empty sum rows: %v", err)
+	}
+	if err := store.InsertSeries(ctx, nil); err != nil {
+		t.Fatalf("inserting empty series rows: %v", err)
+	}
+
+	for _, table := range []string{
+		"otel_metrics_gauge_points",
+		"otel_metrics_sum_points",
+		"otel_metrics_series",
+	} {
+		var count uint64
+		if err := store.conn.QueryRow(ctx, "SELECT count() FROM "+table).Scan(&count); err != nil {
+			t.Fatalf("querying %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("%s row count = %d, want 0", table, count)
+		}
+	}
+}
+
 func TestInsertGauge(t *testing.T) {
 	store, cleanup := setupClickHouse(t)
 	defer cleanup()
