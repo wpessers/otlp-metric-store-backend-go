@@ -51,9 +51,7 @@ func TestMetricsServiceServer_Export(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			out, err := client.Export(ctx, tt.in)
 			if err != nil {
-				if tt.expected.err.Error() != err.Error() {
-					t.Errorf("Err -> \nWant: %q\nGot: %q\n", tt.expected.err, err)
-				}
+				t.Fatalf("Export() error = %v", err)
 			} else {
 				expectedPartialSuccess := tt.expected.out.GetPartialSuccess()
 				if expectedPartialSuccess.GetRejectedDataPoints() != out.GetPartialSuccess().GetRejectedDataPoints() ||
