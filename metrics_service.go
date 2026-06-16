@@ -28,7 +28,11 @@ func (m *dash0MetricsServiceServer) Export(ctx context.Context, request *colmetr
 		return &colmetricspb.ExportMetricsServiceResponse{}, nil
 	}
 
-	mapped := MapMetrics(request.GetResourceMetrics())
+	mapped, err := MapMetrics(request.GetResourceMetrics())
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to map metrics", slog.Any("error", err))
+		return nil, err
+	}
 
 	if len(mapped.Gauges) > 0 {
 		if err := m.store.InsertGauge(ctx, mapped.Gauges); err != nil {

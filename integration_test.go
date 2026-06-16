@@ -146,7 +146,11 @@ func TestInsertGauge(t *testing.T) {
 		},
 	}
 
-	rows := MapMetrics(resourceMetrics).Gauges
+	mapped, err := MapMetrics(resourceMetrics)
+	if err != nil {
+		t.Fatalf("mapping metrics: %v", err)
+	}
+	rows := mapped.Gauges
 	if err := store.InsertGauge(ctx, rows); err != nil {
 		t.Fatalf("inserting gauge rows: %v", err)
 	}
@@ -155,15 +159,14 @@ func TestInsertGauge(t *testing.T) {
 		seriesID uint64
 		value    float64
 	)
-	err := store.conn.QueryRow(ctx,
+	err = store.conn.QueryRow(ctx,
 		"SELECT SeriesID, Value FROM otel_metrics_gauge_points WHERE Value = 42.5",
 	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying gauge: %v", err)
 	}
-	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
-	if seriesID != 0 {
-		t.Errorf("expected SeriesID=0, got %d", seriesID)
+	if want := rows[0].SeriesID; seriesID != want {
+		t.Errorf("expected SeriesID=%d, got %d", want, seriesID)
 	}
 	if value != 42.5 {
 		t.Errorf("expected Value=42.5, got %f", value)
@@ -225,7 +228,11 @@ func TestInsertSum(t *testing.T) {
 		},
 	}
 
-	rows := MapMetrics(resourceMetrics).Sums
+	mapped, err := MapMetrics(resourceMetrics)
+	if err != nil {
+		t.Fatalf("mapping metrics: %v", err)
+	}
+	rows := mapped.Sums
 	if err := store.InsertSum(ctx, rows); err != nil {
 		t.Fatalf("inserting sum rows: %v", err)
 	}
@@ -234,16 +241,14 @@ func TestInsertSum(t *testing.T) {
 		seriesID uint64
 		value    float64
 	)
-	err := store.conn.QueryRow(ctx,
+	err = store.conn.QueryRow(ctx,
 		"SELECT SeriesID, Value FROM otel_metrics_sum_points WHERE Value = 1234",
 	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying sum: %v", err)
 	}
-
-	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
-	if seriesID != 0 {
-		t.Errorf("expected SeriesID=0, got %d", seriesID)
+	if want := rows[0].SeriesID; seriesID != want {
+		t.Errorf("expected SeriesID=%d, got %d", want, seriesID)
 	}
 	if value != 1234 {
 		t.Errorf("expected Value=1234, got %f", value)
@@ -330,10 +335,6 @@ func TestGRPCToClickHouse(t *testing.T) {
 	).Scan(&seriesID, &value)
 	if err != nil {
 		t.Fatalf("querying clickhouse: %v", err)
-	}
-	// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
-	if seriesID != 0 {
-		t.Errorf("expected SeriesID=0, got %d", seriesID)
 	}
 	if value != 99.9 {
 		t.Errorf("expected Value=99.9, got %f", value)

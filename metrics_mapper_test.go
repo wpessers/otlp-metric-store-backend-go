@@ -84,7 +84,10 @@ func sumResourceMetrics() []*metricspb.ResourceMetrics {
 }
 
 func TestMapMetrics_Gauge(t *testing.T) {
-	m := MapMetrics(gaugeResourceMetrics())
+	m, err := MapMetrics(gaugeResourceMetrics())
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
 
 	t.Run("produces one series row and one gauge row", func(t *testing.T) {
 		if len(m.Series) != 1 {
@@ -143,15 +146,9 @@ func TestMapMetrics_Gauge(t *testing.T) {
 		}
 	})
 
-	t.Run("series and point share the placeholder SeriesID", func(t *testing.T) {
+	t.Run("series and point share the same SeriesID", func(t *testing.T) {
 		if len(m.Series) != 1 || len(m.Gauges) != 1 {
 			t.Fatalf("series rows = %d, gauge rows = %d, want 1 each", len(m.Series), len(m.Gauges))
-		}
-		if m.Series[0].SeriesID != placeholderSeriesID {
-			t.Errorf("series SeriesID = %d, want %d", m.Series[0].SeriesID, placeholderSeriesID)
-		}
-		if m.Gauges[0].SeriesID != placeholderSeriesID {
-			t.Errorf("gauge SeriesID = %d, want %d", m.Gauges[0].SeriesID, placeholderSeriesID)
 		}
 		if m.Series[0].SeriesID != m.Gauges[0].SeriesID {
 			t.Errorf("series SeriesID (%d) != gauge SeriesID (%d)", m.Series[0].SeriesID, m.Gauges[0].SeriesID)
@@ -160,7 +157,10 @@ func TestMapMetrics_Gauge(t *testing.T) {
 }
 
 func TestMapMetrics_Sum(t *testing.T) {
-	m := MapMetrics(sumResourceMetrics())
+	m, err := MapMetrics(sumResourceMetrics())
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
 
 	t.Run("produces one series row and one sum row", func(t *testing.T) {
 		if len(m.Series) != 1 {
@@ -217,15 +217,9 @@ func TestMapMetrics_Sum(t *testing.T) {
 		}
 	})
 
-	t.Run("series and point share the placeholder SeriesID", func(t *testing.T) {
+	t.Run("series and point share the same SeriesID", func(t *testing.T) {
 		if len(m.Series) != 1 || len(m.Sums) != 1 {
 			t.Fatalf("series rows = %d, sum rows = %d, want 1 each", len(m.Series), len(m.Sums))
-		}
-		if m.Series[0].SeriesID != placeholderSeriesID {
-			t.Errorf("series SeriesID = %d, want %d", m.Series[0].SeriesID, placeholderSeriesID)
-		}
-		if m.Sums[0].SeriesID != placeholderSeriesID {
-			t.Errorf("sum SeriesID = %d, want %d", m.Sums[0].SeriesID, placeholderSeriesID)
 		}
 		if m.Series[0].SeriesID != m.Sums[0].SeriesID {
 			t.Errorf("series SeriesID (%d) != sum SeriesID (%d)", m.Series[0].SeriesID, m.Sums[0].SeriesID)
@@ -234,8 +228,54 @@ func TestMapMetrics_Sum(t *testing.T) {
 }
 
 func TestMapMetrics_EmptyInput(t *testing.T) {
-	m := MapMetrics(nil)
+	m, err := MapMetrics(nil)
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
 	if len(m.Series) != 0 || len(m.Gauges) != 0 || len(m.Sums) != 0 {
 		t.Errorf("MapMetrics(nil) = %+v, want all empty", m)
+	}
+}
+
+func TestMapMetrics_DeduplicatesSeries(t *testing.T) {
+	attr := func(k, v string) []*commonpb.KeyValue {
+		return []*commonpb.KeyValue{{Key: k, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: v}}}}
+	}
+
+	rm := []*metricspb.ResourceMetrics{{
+		Resource: &resourcepb.Resource{
+			Attributes: attr("service.name", "checkout"),
+		},
+		ScopeMetrics: []*metricspb.ScopeMetrics{{
+			Scope: &commonpb.InstrumentationScope{Name: "scope"},
+			Metrics: []*metricspb.Metric{{
+				Name: "memory.usage",
+				Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{
+					DataPoints: []*metricspb.NumberDataPoint{
+						{Attributes: attr("state", "used"), TimeUnixNano: 1, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 1}},
+						{Attributes: attr("state", "used"), TimeUnixNano: 2, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 2}},
+						{Attributes: attr("state", "free"), TimeUnixNano: 3, Value: &metricspb.NumberDataPoint_AsDouble{AsDouble: 3}},
+					},
+				}},
+			}},
+		}},
+	}}
+
+	m, err := MapMetrics(rm)
+	if err != nil {
+		t.Fatalf("MapMetrics() error = %v", err)
+	}
+
+	if len(m.Gauges) != 3 {
+		t.Errorf("gauge rows = %d, want 3 (one per data point)", len(m.Gauges))
+	}
+	if len(m.Series) != 2 {
+		t.Fatalf("series rows = %d, want 2 (deduplicated by identity)", len(m.Series))
+	}
+	if m.Gauges[0].SeriesID != m.Gauges[1].SeriesID {
+		t.Errorf("identical data points got different series IDs: %d and %d", m.Gauges[0].SeriesID, m.Gauges[1].SeriesID)
+	}
+	if m.Gauges[0].SeriesID == m.Gauges[2].SeriesID {
+		t.Errorf("data points with different attributes share series ID %d", m.Gauges[0].SeriesID)
 	}
 }

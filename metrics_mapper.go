@@ -9,11 +9,9 @@ import (
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 )
 
-// TODO: placeholder until we implement proper SeriesID generation based on metric "identity"
 const (
-	metricTypeGauge     = "gauge"
-	metricTypeSum       = "sum"
-	placeholderSeriesID = uint64(0)
+	metricTypeGauge = "gauge"
+	metricTypeSum   = "sum"
 )
 
 // serviceName extracts the service.name from resource attributes, returning "" if not found.
@@ -74,17 +72,19 @@ func numberDataPointValue(dp *metricspb.NumberDataPoint) float64 {
 	}
 }
 
-// TODO: Series currently contains one row per data point. Once SeriesID computation is implemented, identical series should be deduplicated
+// MappedMetrics holds the rows extracted from one export request
 type MappedMetrics struct {
 	Series []MetricSeriesRow
 	Gauges []GaugeRow
 	Sums   []SumRow
 }
 
-// MapMetrics walks the request and emits a MetricSeriesRow together with the matching
-// datapoint row for each gauge and sum metric.
-func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) MappedMetrics {
+// MapMetrics walks the request and produces the rows to persist: a deduplicated
+// series row per unique metric identity, and a gauge or sum data-point row for each datapoint
+func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) (MappedMetrics, error) {
 	var mapped MappedMetrics
+	seen := make(map[uint64]struct{})
+
 	for _, rm := range resourceMetrics {
 		svcName := serviceName(rm.GetResource())
 		resAttrs := kvToMap(rm.GetResource().GetAttributes())
@@ -113,12 +113,12 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) MappedMetrics {
 							ScopeSchemaUrl:        sm.GetSchemaUrl(),
 							Attributes:            kvToMap(dp.GetAttributes()),
 						}
-						mapped.Series = append(mapped.Series, MetricSeriesRow{
-							SeriesID:       placeholderSeriesID,
-							MetricMetadata: meta,
-						})
+						id, err := mapped.recordSeries(seen, meta)
+						if err != nil {
+							return MappedMetrics{}, err
+						}
 						mapped.Gauges = append(mapped.Gauges, GaugeRow{
-							SeriesID:        placeholderSeriesID,
+							SeriesID:        id,
 							NumberDataPoint: numberDataPoint(dp),
 						})
 					}
@@ -142,12 +142,12 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) MappedMetrics {
 							AggregationTemporality: int32(sum.GetAggregationTemporality()),
 							IsMonotonic:            sum.GetIsMonotonic(),
 						}
-						mapped.Series = append(mapped.Series, MetricSeriesRow{
-							SeriesID:       placeholderSeriesID,
-							MetricMetadata: meta,
-						})
+						id, err := mapped.recordSeries(seen, meta)
+						if err != nil {
+							return MappedMetrics{}, err
+						}
 						mapped.Sums = append(mapped.Sums, SumRow{
-							SeriesID:        placeholderSeriesID,
+							SeriesID:        id,
 							NumberDataPoint: numberDataPoint(dp),
 						})
 					}
@@ -155,7 +155,23 @@ func MapMetrics(resourceMetrics []*metricspb.ResourceMetrics) MappedMetrics {
 			}
 		}
 	}
-	return mapped
+	return mapped, nil
+}
+
+// recordSeries returns meta's SeriesID, appending its lookup row the first time that ID is seen.
+func (mm *MappedMetrics) recordSeries(seen map[uint64]struct{}, meta MetricMetadata) (uint64, error) {
+	id, err := meta.SeriesID()
+	if err != nil {
+		return 0, fmt.Errorf("computing series id for metric %q: %w", meta.MetricName, err)
+	}
+	if _, ok := seen[id]; !ok {
+		seen[id] = struct{}{}
+		mm.Series = append(mm.Series, MetricSeriesRow{
+			SeriesID:       id,
+			MetricMetadata: meta,
+		})
+	}
+	return id, nil
 }
 
 // numberDataPoint converts an OTLP NumberDataPoint into the point fields shared by gauge and sum rows.
